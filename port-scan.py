@@ -6,25 +6,52 @@ import threading
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog
 from datetime import datetime
-import sv_ttk  # Modern theme for tkinter
-import ipaddress
-import csv
-import json
 import time
 import random
-from scapy.all import ARP, Ether, srp, ICMP, IP, TCP, conf
-import requests
-from bs4 import BeautifulSoup
-import whois
-import dns.resolver
+import csv
+import json
+import ipaddress
 import subprocess
 import sys
 import os
-from PIL import Image, ImageTk
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import numpy as np
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import platform
+from collections import OrderedDict
+
+# محاولة استيراد المكتبات الاختيارية
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
+
+try:
+    from scapy.all import ARP, Ether, srp, ICMP, IP, TCP, conf
+    SCAPY_AVAILABLE = True
+except ImportError:
+    SCAPY_AVAILABLE = False
+
+try:
+    import whois
+    WHOIS_AVAILABLE = True
+except ImportError:
+    WHOIS_AVAILABLE = False
+
+try:
+    import dns.resolver
+    DNS_AVAILABLE = True
+except ImportError:
+    DNS_AVAILABLE = False
+
+# تحديد نظام التشغيل
+IS_WINDOWS = platform.system() == "Windows"
+IS_LINUX = platform.system() == "Linux"
+
+# محاولة استيراد سمة التصميم الحديثة (إن وجدت)
+try:
+    import sv_ttk
+    THEME_AVAILABLE = True
+except ImportError:
+    THEME_AVAILABLE = False
 
 class PortScannerGUI:
     def __init__(self, root):
@@ -33,20 +60,20 @@ class PortScannerGUI:
         self.root.geometry("1200x850")
         self.root.minsize(1000, 700)
         
-        # Set dark theme
-        sv_ttk.set_theme("dark")
+        # تعيين سمة التصميم إذا كانت متاحة
+        if THEME_AVAILABLE:
+            sv_ttk.set_theme("dark")
         
-        # Configure styles
+        # تكوين الأنماط
         self.style = ttk.Style()
         self.style.configure('Header.TLabel', font=('Segoe UI', 18, 'bold'))
         self.style.configure('Subtitle.TLabel', font=('Segoe UI', 11))
         self.style.configure('Accent.TButton', font=('Segoe UI', 10, 'bold'))
-        self.style.configure('Card.TFrame', background='#1c1c1c')
         self.style.configure('Critical.TLabel', foreground='#ff4444')
         self.style.configure('Warning.TLabel', foreground='#ffbb33')
         self.style.configure('Success.TLabel', foreground='#00C851')
         
-        # Variables
+        # المتغيرات
         self.scanning = False
         self.stop_scan = False
         self.open_ports = []
@@ -55,68 +82,72 @@ class PortScannerGUI:
         self.vulnerability_db = self.load_vulnerability_db()
         self.common_ports_list = self.load_common_ports()
         
-        # Network information
-        self.local_ip = socket.gethostbyname(socket.gethostname())
+        # معلومات الشبكة
+        self.local_ip = self.get_local_ip()
         self.public_ip = self.get_public_ip()
         
         self.setup_ui()
         
     def setup_ui(self):
-        # Create notebook (tabs)
+        # إنشاء دفتر (تبويبات)
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill='both', expand=True, padx=10, pady=10)
         
-        # Main scan tab
+        # تبويب المسح الرئيسي
         self.scan_frame = ttk.Frame(self.notebook, padding=15)
         self.notebook.add(self.scan_frame, text='Port Scanner')
         
-        # Network tools tab
+        # تبويب أدوات الشبكة
         self.tools_frame = ttk.Frame(self.notebook, padding=15)
         self.notebook.add(self.tools_frame, text='Network Tools')
         
-        # Results history tab
+        # تبويب سجل النتائج
         self.history_frame = ttk.Frame(self.notebook, padding=15)
         self.notebook.add(self.history_frame, text='Scan History')
         
-        # Settings tab
+        # تبويب الإعدادات
         self.settings_frame = ttk.Frame(self.notebook, padding=15)
         self.notebook.add(self.settings_frame, text='Settings')
         
-        # Setup each tab
+        # إعداد كل تبويب
         self.setup_scan_tab()
         self.setup_tools_tab()
         self.setup_history_tab()
         self.setup_settings_tab()
         
     def setup_scan_tab(self):
-        # Main container
+        # الحاوية الرئيسية
         main_container = ttk.Frame(self.scan_frame)
         main_container.pack(fill='both', expand=True)
         
-        # Header
+        # رأس الصفحة
         header_frame = ttk.Frame(main_container)
         header_frame.pack(fill='x', pady=(0, 20))
         
         ttk.Label(header_frame, text="🚀 Port Scanner Pro - Ultimate Edition", style='Header.TLabel').pack(side='left')
         
-        # Quick info panel
+        # لوحة المعلومات السريعة
         info_frame = ttk.Frame(header_frame)
         info_frame.pack(side='right')
         
-        ttk.Label(info_frame, text=f"Local IP: {self.local_ip} | Public IP: {self.public_ip}", 
+        ttk.Label(info_frame, text=f"Local IP: {self.local_ip}", 
+                 style='Subtitle.TLabel').pack(side='top', anchor='e')
+        ttk.Label(info_frame, text=f"Public IP: {self.public_ip}", 
                  style='Subtitle.TLabel').pack(side='top', anchor='e')
         ttk.Label(info_frame, text=f"Hostname: {socket.gethostname()}", 
                  style='Subtitle.TLabel').pack(side='top', anchor='e')
+        ttk.Label(info_frame, text=f"OS: {platform.system()} {platform.release()}", 
+                 style='Subtitle.TLabel').pack(side='top', anchor='e')
         
-        # Content area
+        # منطقة المحتوى
         content_frame = ttk.Frame(main_container)
         content_frame.pack(fill='both', expand=True)
         
-        # Left panel - Controls
+        # اللوحة اليسرى - عناصر التحكم
         control_frame = ttk.LabelFrame(content_frame, text="Scan Configuration", padding=15)
         control_frame.pack(side='left', fill='y', padx=(0, 10))
         
-        # Target input with advanced options
+        # إدخال الهدف مع خيارات متقدمة
         ttk.Label(control_frame, text="Target", font=('Segoe UI', 10, 'bold')).grid(row=0, column=0, sticky='w', pady=(0, 5))
         
         target_input_frame = ttk.Frame(control_frame)
@@ -128,7 +159,7 @@ class PortScannerGUI:
         
         ttk.Button(target_input_frame, text="Discover", command=self.discover_hosts, width=8).pack(side='right', padx=(5, 0))
         
-        # Scan type
+        # نوع المسح
         ttk.Label(control_frame, text="Scan Type", font=('Segoe UI', 10, 'bold')).grid(row=2, column=0, sticky='w', pady=(0, 5))
         
         self.scan_type_var = tk.StringVar(value="TCP Connect")
@@ -136,7 +167,7 @@ class PortScannerGUI:
         scan_type_combo = ttk.Combobox(control_frame, textvariable=self.scan_type_var, values=scan_types, state="readonly")
         scan_type_combo.grid(row=3, column=0, sticky='we', pady=(0, 15))
         
-        # Port selection
+        # اختيار المنافذ
         port_selection_frame = ttk.LabelFrame(control_frame, text="Port Selection", padding=10)
         port_selection_frame.grid(row=4, column=0, sticky='we', pady=(0, 15))
         
@@ -145,7 +176,7 @@ class PortScannerGUI:
         ttk.Radiobutton(port_selection_frame, text="Common Ports", variable=self.port_selection_var, value="Common").grid(row=0, column=1, sticky='w')
         ttk.Radiobutton(port_selection_frame, text="Custom List", variable=self.port_selection_var, value="Custom").grid(row=0, column=2, sticky='w')
         
-        # Port range
+        # نطاق المنافذ
         port_range_frame = ttk.Frame(port_selection_frame)
         port_range_frame.grid(row=1, column=0, columnspan=3, sticky='we', pady=(5, 0))
         
@@ -159,12 +190,12 @@ class PortScannerGUI:
         end_port_entry = ttk.Entry(port_range_frame, textvariable=self.end_port_var, width=8, font=('Segoe UI', 9))
         end_port_entry.pack(side='left')
         
-        # Custom ports
+        # منافذ مخصصة
         self.custom_ports_var = tk.StringVar(value="80,443,22,21,23,25,53,110,135,137,139,143,445,993,995,1723,3306,3389,5900,8080")
         custom_ports_entry = ttk.Entry(port_selection_frame, textvariable=self.custom_ports_var, font=('Segoe UI', 9))
         custom_ports_entry.grid(row=2, column=0, columnspan=3, sticky='we', pady=(5, 0))
         
-        # Advanced settings
+        # الإعدادات المتقدمة
         advanced_frame = ttk.LabelFrame(control_frame, text="Advanced Settings", padding=10)
         advanced_frame.grid(row=5, column=0, sticky='we', pady=(0, 15))
         
@@ -188,7 +219,7 @@ class PortScannerGUI:
         retries_entry = ttk.Entry(advanced_frame, textvariable=self.retries_var, width=8, font=('Segoe UI', 9))
         retries_entry.grid(row=1, column=3, pady=(5, 0), sticky='w')
         
-        # Options
+        # الخيارات
         options_frame = ttk.Frame(control_frame)
         options_frame.grid(row=6, column=0, sticky='we', pady=(0, 20))
         
@@ -204,7 +235,7 @@ class PortScannerGUI:
         os_cb = ttk.Checkbutton(options_frame, text="OS detection", variable=self.os_detection_var)
         os_cb.pack(side='left', padx=(10, 0))
         
-        # Action buttons
+        # أزرار التنفيذ
         button_frame = ttk.Frame(control_frame)
         button_frame.grid(row=7, column=0, sticky='we')
         
@@ -216,27 +247,27 @@ class PortScannerGUI:
         
         ttk.Button(button_frame, text="Save Results", command=self.save_results).pack(side='right')
         
-        # Right panel - Results
+        # اللوحة اليمنى - النتائج
         results_frame = ttk.LabelFrame(content_frame, text="Scan Results", padding=10)
         results_frame.pack(side='right', fill='both', expand=True, padx=(10, 0))
         
-        # Create notebook for results tabs
+        # إنشاء دفتر للتبويبات داخل نتائج المسح
         results_notebook = ttk.Notebook(results_frame)
         results_notebook.pack(fill='both', expand=True)
         
-        # Port results tab
+        # تبويب نتائج المنافذ
         port_results_frame = ttk.Frame(results_notebook, padding=5)
         results_notebook.add(port_results_frame, text='Ports')
         
-        # Host info tab
+        # تبويب معلومات المضيف
         host_info_frame = ttk.Frame(results_notebook, padding=5)
         results_notebook.add(host_info_frame, text='Host Info')
         
-        # Vulnerability tab
+        # تبويب الثغرات الأمنية
         vuln_frame = ttk.Frame(results_notebook, padding=5)
         results_notebook.add(vuln_frame, text='Vulnerabilities')
         
-        # Results text area with custom styling
+        # منطقة النتائج النصية مع تنسيق مخصص
         self.results_text = scrolledtext.ScrolledText(
             port_results_frame, 
             width=60, 
@@ -252,7 +283,7 @@ class PortScannerGUI:
         )
         self.results_text.pack(fill='both', expand=True)
         
-        # Host info text area
+        # منطقة معلومات المضيف
         self.host_info_text = scrolledtext.ScrolledText(
             host_info_frame,
             bg='#1a1a1a',
@@ -266,7 +297,7 @@ class PortScannerGUI:
         )
         self.host_info_text.pack(fill='both', expand=True)
         
-        # Vulnerability text area
+        # منطقة الثغرات الأمنية
         self.vuln_text = scrolledtext.ScrolledText(
             vuln_frame,
             bg='#1a1a1a',
@@ -280,11 +311,11 @@ class PortScannerGUI:
         )
         self.vuln_text.pack(fill='both', expand=True)
         
-        # Progress bar
+        # شريط التقدم
         self.progress = ttk.Progressbar(results_frame, mode='determinate')
         self.progress.pack(fill='x', pady=(10, 0))
         
-        # Statistics frame
+        # إطار الإحصائيات
         stats_frame = ttk.Frame(results_frame)
         stats_frame.pack(fill='x', pady=(10, 0))
         
@@ -304,26 +335,26 @@ class PortScannerGUI:
         self.status_var = tk.StringVar(value="Ready")
         ttk.Label(stats_frame, textvariable=self.status_var, font=('Segoe UI', 9, 'bold')).grid(row=0, column=7, sticky='w', padx=(5, 0))
         
-        # Configure grid weights
+        # تكوين أوزان الشبكة
         control_frame.columnconfigure(0, weight=1)
         port_selection_frame.columnconfigure(2, weight=1)
         advanced_frame.columnconfigure(3, weight=1)
         button_frame.columnconfigure(1, weight=1)
         stats_frame.columnconfigure(7, weight=1)
         
-        # Initialize
+        # التهيئة الأولية
         self.append_result("🚀 Port Scanner Pro Ultimate Edition initialized\n", "#4fc3f7")
         self.append_result("Enter target and port range to begin scanning\n\n", "#ba68c8")
         
     def setup_tools_tab(self):
-        # Network tools interface
+        # واجهة أدوات الشبكة
         ttk.Label(self.tools_frame, text="Network Analysis Tools", style='Header.TLabel').pack(anchor='w', pady=(0, 20))
         
-        # Tools notebook
+        # دفتر أدوات
         tools_notebook = ttk.Notebook(self.tools_frame)
         tools_notebook.pack(fill='both', expand=True)
         
-        # Ping tool
+        # أداة Ping
         ping_frame = ttk.Frame(tools_notebook, padding=10)
         tools_notebook.add(ping_frame, text='Ping')
         
@@ -347,59 +378,61 @@ class PortScannerGUI:
         )
         self.ping_result.pack(fill='both', expand=True)
         
-        # WHOIS tool
-        whois_frame = ttk.Frame(tools_notebook, padding=10)
-        tools_notebook.add(whois_frame, text='WHOIS')
+        # أداة WHOIS
+        if WHOIS_AVAILABLE:
+            whois_frame = ttk.Frame(tools_notebook, padding=10)
+            tools_notebook.add(whois_frame, text='WHOIS')
+            
+            whois_input_frame = ttk.Frame(whois_frame)
+            whois_input_frame.pack(fill='x', pady=(0, 10))
+            
+            ttk.Label(whois_input_frame, text="Domain:").pack(side='left')
+            self.whois_domain_var = tk.StringVar(value="google.com")
+            whois_entry = ttk.Entry(whois_input_frame, textvariable=self.whois_domain_var, width=30)
+            whois_entry.pack(side='left', padx=(5, 10))
+            
+            ttk.Button(whois_input_frame, text="Lookup", command=self.run_whois).pack(side='left')
+            
+            self.whois_result = scrolledtext.ScrolledText(
+                whois_frame,
+                height=15,
+                bg='#1a1a1a',
+                fg='#ffffff',
+                font=('Consolas', 10)
+            )
+            self.whois_result.pack(fill='both', expand=True)
         
-        whois_input_frame = ttk.Frame(whois_frame)
-        whois_input_frame.pack(fill='x', pady=(0, 10))
+        # أداة DNS
+        if DNS_AVAILABLE:
+            dns_frame = ttk.Frame(tools_notebook, padding=10)
+            tools_notebook.add(dns_frame, text='DNS Lookup')
+            
+            dns_input_frame = ttk.Frame(dns_frame)
+            dns_input_frame.pack(fill='x', pady=(0, 10))
+            
+            ttk.Label(dns_input_frame, text="Domain:").pack(side='left')
+            self.dns_domain_var = tk.StringVar(value="google.com")
+            dns_entry = ttk.Entry(dns_input_frame, textvariable=self.dns_domain_var, width=20)
+            dns_entry.pack(side='left', padx=(5, 5))
+            
+            ttk.Label(dns_input_frame, text="Record Type:").pack(side='left', padx=(10, 5))
+            self.dns_type_var = tk.StringVar(value="A")
+            dns_type_combo = ttk.Combobox(dns_input_frame, textvariable=self.dns_type_var, 
+                                         values=["A", "AAAA", "CNAME", "MX", "NS", "SOA", "TXT"], width=8)
+            dns_type_combo.pack(side='left')
+            
+            ttk.Button(dns_input_frame, text="Lookup", command=self.run_dns_lookup).pack(side='left', padx=(10, 0))
+            
+            self.dns_result = scrolledtext.ScrolledText(
+                dns_frame,
+                height=15,
+                bg='#1a1a1a',
+                fg='#ffffff',
+                font=('Consolas', 10)
+            )
+            self.dns_result.pack(fill='both', expand=True)
         
-        ttk.Label(whois_input_frame, text="Domain:").pack(side='left')
-        self.whois_domain_var = tk.StringVar(value="google.com")
-        whois_entry = ttk.Entry(whois_input_frame, textvariable=self.whois_domain_var, width=30)
-        whois_entry.pack(side='left', padx=(5, 10))
-        
-        ttk.Button(whois_input_frame, text="Lookup", command=self.run_whois).pack(side='left')
-        
-        self.whois_result = scrolledtext.ScrolledText(
-            whois_frame,
-            height=15,
-            bg='#1a1a1a',
-            fg='#ffffff',
-            font=('Consolas', 10)
-        )
-        self.whois_result.pack(fill='both', expand=True)
-        
-        # DNS tool
-        dns_frame = ttk.Frame(tools_notebook, padding=10)
-        tools_notebook.add(dns_frame, text='DNS Lookup')
-        
-        dns_input_frame = ttk.Frame(dns_frame)
-        dns_input_frame.pack(fill='x', pady=(0, 10))
-        
-        ttk.Label(dns_input_frame, text="Domain:").pack(side='left')
-        self.dns_domain_var = tk.StringVar(value="google.com")
-        dns_entry = ttk.Entry(dns_input_frame, textvariable=self.dns_domain_var, width=20)
-        dns_entry.pack(side='left', padx=(5, 5))
-        
-        ttk.Label(dns_input_frame, text="Record Type:").pack(side='left', padx=(10, 5))
-        self.dns_type_var = tk.StringVar(value="A")
-        dns_type_combo = ttk.Combobox(dns_input_frame, textvariable=self.dns_type_var, 
-                                     values=["A", "AAAA", "CNAME", "MX", "NS", "SOA", "TXT"], width=8)
-        dns_type_combo.pack(side='left')
-        
-        ttk.Button(dns_input_frame, text="Lookup", command=self.run_dns_lookup).pack(side='left', padx=(10, 0))
-        
-        self.dns_result = scrolledtext.ScrolledText(
-            dns_frame,
-            height=15,
-            bg='#1a1a1a',
-            fg='#ffffff',
-            font=('Consolas', 10)
-        )
-        self.dns_result.pack(fill='both', expand=True)
-        
-        # Subnet calculator
+        # أداة Subnet Calculator
         subnet_frame = ttk.Frame(tools_notebook, padding=10)
         tools_notebook.add(subnet_frame, text='Subnet Calculator')
         
@@ -419,14 +452,30 @@ class PortScannerGUI:
             bg='#1a1a1a',
             fg='#ffffff',
             font=('Consolas', 10)
-        )
+            )
         self.subnet_result.pack(fill='both', expand=True)
+        
+        # إضافة تبويب لأدوات النظام
+        system_frame = ttk.Frame(tools_notebook, padding=10)
+        tools_notebook.add(system_frame, text='System Info')
+        
+        system_info = self.get_system_info()
+        system_text = scrolledtext.ScrolledText(
+            system_frame,
+            height=15,
+            bg='#1a1a1a',
+            fg='#ffffff',
+            font=('Consolas', 10)
+        )
+        system_text.pack(fill='both', expand=True)
+        system_text.insert(tk.END, system_info)
+        system_text.config(state=tk.DISABLED)
     
     def setup_history_tab(self):
-        # Scan history interface
+        # واجهة سجل المسح
         ttk.Label(self.history_frame, text="Scan History", style='Header.TLabel').pack(anchor='w', pady=(0, 20))
         
-        # History controls
+        # عناصر تحكم السجل
         history_controls = ttk.Frame(self.history_frame)
         history_controls.pack(fill='x', pady=(0, 10))
         
@@ -434,7 +483,7 @@ class PortScannerGUI:
         ttk.Button(history_controls, text="Clear History", command=self.clear_history).pack(side='left', padx=(5, 0))
         ttk.Button(history_controls, text="Export All", command=self.export_history).pack(side='right')
         
-        # History table
+        # جدول السجل
         columns = ("Date", "Target", "Ports", "Open", "Time")
         self.history_tree = ttk.Treeview(self.history_frame, columns=columns, show="headings", height=15)
         
@@ -445,21 +494,21 @@ class PortScannerGUI:
         self.history_tree.column("Date", width=150)
         self.history_tree.column("Target", width=150)
         
-        # Scrollbar for treeview
+        # شريط التمرير للجدول
         scrollbar = ttk.Scrollbar(self.history_frame, orient="vertical", command=self.history_tree.yview)
         self.history_tree.configure(yscrollcommand=scrollbar.set)
         
         self.history_tree.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
         
-        # Load history
+        # تحميل السجل
         self.load_history()
     
     def setup_settings_tab(self):
-        # Settings interface
+        # واجهة الإعدادات
         ttk.Label(self.settings_frame, text="Application Settings", style='Header.TLabel').pack(anchor='w', pady=(0, 20))
         
-        # Theme selection
+        # اختيار السمة
         theme_frame = ttk.LabelFrame(self.settings_frame, text="Theme", padding=10)
         theme_frame.pack(fill='x', pady=(0, 15))
         
@@ -469,7 +518,7 @@ class PortScannerGUI:
         ttk.Radiobutton(theme_frame, text="Light", variable=self.theme_var, value="light", 
                        command=self.change_theme).pack(side='left', padx=(20, 0))
         
-        # Default scan settings
+        # إعدادات المسح الافتراضية
         defaults_frame = ttk.LabelFrame(self.settings_frame, text="Default Scan Settings", padding=10)
         defaults_frame.pack(fill='x', pady=(0, 15))
         
@@ -485,26 +534,30 @@ class PortScannerGUI:
         self.default_ports_var = tk.StringVar(value="1-1024")
         ttk.Entry(defaults_frame, textvariable=self.default_ports_var, width=10).grid(row=1, column=1, sticky='w', padx=(5, 0), pady=(10, 0))
         
-        # Vulnerability database
+        # قاعدة بيانات الثغرات
         vuln_db_frame = ttk.LabelFrame(self.settings_frame, text="Vulnerability Database", padding=10)
         vuln_db_frame.pack(fill='x', pady=(0, 15))
         
         ttk.Button(vuln_db_frame, text="Update Vulnerability DB", command=self.update_vulnerability_db).pack(side='left')
         ttk.Button(vuln_db_frame, text="View Vulnerability DB", command=self.view_vulnerability_db).pack(side='left', padx=(10, 0))
         
-        # Application info
+        # معلومات التطبيق
         info_frame = ttk.LabelFrame(self.settings_frame, text="Application Information", padding=10)
         info_frame.pack(fill='x', pady=(0, 15))
         
         ttk.Label(info_frame, text="Version: 2.0.0").pack(anchor='w')
         ttk.Label(info_frame, text="Author: Port Scanner Pro Team").pack(anchor='w')
         ttk.Label(info_frame, text="License: MIT").pack(anchor='w')
+        ttk.Label(info_frame, text=f"Platform: {platform.system()} {platform.release()}").pack(anchor='w')
         
-        # Reset button
+        # زر الإعادة إلى الإعدادات الافتراضية
         ttk.Button(self.settings_frame, text="Reset to Defaults", command=self.reset_settings).pack(anchor='w')
     
     def change_theme(self):
-        sv_ttk.set_theme(self.theme_var.get())
+        if THEME_AVAILABLE:
+            sv_ttk.set_theme(self.theme_var.get())
+        else:
+            messagebox.showinfo("Theme", "Theme library not available. Using system theme.")
     
     def reset_settings(self):
         self.default_timeout_var.set("0.5")
@@ -514,12 +567,12 @@ class PortScannerGUI:
     
     def update_vulnerability_db(self):
         self.append_result("Updating vulnerability database...\n", "#4fc3f7")
-        # In a real application, this would fetch from an online source
+        # في التطبيق الحقيقي، هذا سيقوم بالجلب من مصدر عبر الإنترنت
         self.vulnerability_db = self.load_vulnerability_db()
         self.append_result("Vulnerability database updated.\n", "#4caf50")
     
     def view_vulnerability_db(self):
-        # Create a new window to view the vulnerability database
+        # إنشاء نافذة جديدة لعرض قاعدة بيانات الثغرات
         vuln_window = tk.Toplevel(self.root)
         vuln_window.title("Vulnerability Database")
         vuln_window.geometry("800x600")
@@ -532,13 +585,13 @@ class PortScannerGUI:
         )
         text_area.pack(fill='both', expand=True, padx=10, pady=10)
         
-        # Display the vulnerability database
+        # عرض قاعدة بيانات الثغرات
         text_area.insert(tk.END, json.dumps(self.vulnerability_db, indent=2))
         text_area.config(state=tk.DISABLED)
     
     def load_vulnerability_db(self):
-        # This is a simplified vulnerability database
-        # In a real application, this would be loaded from a file or online database
+        # هذه قاعدة بيانات مبسطة للثغرات
+        # في التطبيق الحقيقي، سيتم تحميل هذا من ملف أو قاعدة بيانات عبر الإنترنت
         return {
             "21": {"service": "FTP", "vulnerabilities": ["Anonymous login", "Brute force"]},
             "22": {"service": "SSH", "vulnerabilities": ["Weak passwords", "SSH version 1"]},
@@ -562,535 +615,729 @@ class PortScannerGUI:
         }
     
     def load_common_ports(self):
-        # List of common ports and their services
-        return {
-            21: "FTP",
-            22: "SSH",
-            23: "Telnet",
-            25: "SMTP",
-            53: "DNS",
-            80: "HTTP",
-            110: "POP3",
-            115: "SFTP",
-            135: "RPC",
-            139: "NetBIOS",
-            143: "IMAP",
-            194: "IRC",
-            443: "HTTPS",
-            445: "SMB",
-            993: "IMAPS",
-            995: "POP3S",
-            1433: "MSSQL",
-            1723: "PPTP",
-            3306: "MySQL",
-            3389: "RDP",
-            5900: "VNC",
-            8080: "HTTP-Alt"
-        }
+        # قائمة بالمنافذ الشائعة وخدماتها
+        return OrderedDict([
+            (21, "FTP"),
+            (22, "SSH"),
+            (23, "Telnet"),
+            (25, "SMTP"),
+            (53, "DNS"),
+            (80, "HTTP"),
+            (110, "POP3"),
+            (115, "SFTP"),
+            (135, "RPC"),
+            (139, "NetBIOS"),
+            (143, "IMAP"),
+            (194, "IRC"),
+            (443, "HTTPS"),
+            (445, "SMB"),
+            (993, "IMAPS"),
+            (995, "POP3S"),
+            (1433, "MSSQL"),
+            (1723, "PPTP"),
+            (3306, "MySQL"),
+            (3389, "RDP"),
+            (5900, "VNC"),
+            (8080, "HTTP-Alt")
+        ])
+    
+    def get_local_ip(self):
+        try:
+            # الحصول على IP المحلي عن طريق إنشاء اتصال تجريبي
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except:
+            return "127.0.0.1"
     
     def get_public_ip(self):
         try:
-            return requests.get('https://api.ipify.org').text
+            if not REQUESTS_AVAILABLE:
+                return "Requests library required"
+            
+            response = requests.get("https://api.ipify.org", timeout=10)
+            response = requests.get('https://api.ipify.org', timeout=10)
+            return response.text
         except:
             return "Unable to determine"
     
-    def discover_hosts(self):
-        target = self.target_var.get()
-        try:
-            # Check if target is a network range
-            if '/' in target:
-                network = ipaddress.ip_network(target, strict=False)
-                hosts = [str(ip) for ip in network.hosts()]
-                
-                # Create a new window to show discovered hosts
-                discover_window = tk.Toplevel(self.root)
-                discover_window.title("Discovered Hosts")
-                discover_window.geometry("400x300")
-                
-                text_area = scrolledtext.ScrolledText(
-                    discover_window,
-                    bg='#1a1a1a',
-                    fg='#ffffff',
-                    font=('Consolas', 10)
-                )
-                text_area.pack(fill='both', expand=True, padx=10, pady=10)
-                
-                text_area.insert(tk.END, f"Hosts in {target}:\n\n")
-                for host in hosts:
-                    text_area.insert(tk.END, f"{host}\n")
-                
-                text_area.config(state=tk.DISABLED)
-            else:
-                messagebox.showinfo("Discovery", "Enter a network range (e.g., 192.168.1.0/24) to discover hosts.")
-        except ValueError:
-            messagebox.showerror("Error", "Invalid network range")
+    def get_system_info(self):
+        # جمع معلومات النظام
+        info = "=== System Information ===\n\n"
+        info += f"Hostname: {socket.gethostname()}\n"
+        info += f"OS: {platform.system()} {platform.release()}\n"
+        info += f"Version: {platform.version()}\n"
+        info += f"Architecture: {platform.machine()}\n"
+        info += f"Processor: {platform.processor()}\n\n"
+        
+        info += "=== Network Information ===\n\n"
+        info += f"Local IP: {self.local_ip}\n"
+        info += f"Public IP: {self.public_ip}\n\n"
+        
+        info += "=== Python Information ===\n\n"
+        info += f"Python Version: {platform.python_version()}\n"
+        info += f"Python Implementation: {platform.python_implementation()}\n"
+        
+        return info
     
-    def run_ping(self):
-        host = self.ping_host_var.get()
-        self.ping_result.delete(1.0, tk.END)
-        self.ping_result.insert(tk.END, f"Pinging {host}...\n\n")
-        
-        # Run ping command based on OS
-        param = "-n" if sys.platform.lower() == "win32" else "-c"
-        command = ["ping", param, "4", host]
-        
-        try:
-            output = subprocess.check_output(command, universal_newlines=True)
-            self.ping_result.insert(tk.END, output)
-        except subprocess.CalledProcessError as e:
-            self.ping_result.insert(tk.END, f"Error: {e}")
-    
-    def run_traceroute(self):
-        host = self.ping_host_var.get()
-        self.ping_result.delete(1.0, tk.END)
-        self.ping_result.insert(tk.END, f"Tracing route to {host}...\n\n")
-        
-        # Run traceroute command based on OS
-        command = ["tracert", "-d", host] if sys.platform.lower() == "win32" else ["traceroute", host]
-        
-        try:
-            output = subprocess.check_output(command, universal_newlines=True)
-            self.ping_result.insert(tk.END, output)
-        except subprocess.CalledProcessError as e:
-            self.ping_result.insert(tk.END, f"Error: {e}")
-        except FileNotFoundError:
-            self.ping_result.insert(tk.END, "Traceroute utility not found")
-    
-    def run_whois(self):
-        domain = self.whois_domain_var.get()
-        self.whois_result.delete(1.0, tk.END)
-        self.whois_result.insert(tk.END, f"WHOIS lookup for {domain}...\n\n")
-        
-        try:
-            whois_info = whois.whois(domain)
-            self.whois_result.insert(tk.END, str(whois_info))
-        except Exception as e:
-            self.whois_result.insert(tk.END, f"Error: {e}")
-    
-    def run_dns_lookup(self):
-        domain = self.dns_domain_var.get()
-        record_type = self.dns_type_var.get()
-        self.dns_result.delete(1.0, tk.END)
-        self.dns_result.insert(tk.END, f"DNS {record_type} lookup for {domain}...\n\n")
-        
-        try:
-            answers = dns.resolver.resolve(domain, record_type)
-            for rdata in answers:
-                self.dns_result.insert(tk.END, f"{rdata}\n")
-        except dns.resolver.NoAnswer:
-            self.dns_result.insert(tk.END, f"No {record_type} records found for {domain}")
-        except dns.resolver.NXDOMAIN:
-            self.dns_result.insert(tk.END, f"Domain {domain} does not exist")
-        except Exception as e:
-            self.dns_result.insert(tk.END, f"Error: {e}")
-    
-    def calculate_subnet(self):
-        subnet_str = self.subnet_ip_var.get()
-        self.subnet_result.delete(1.0, tk.END)
-        
-        try:
-            network = ipaddress.ip_network(subnet_str, strict=False)
-            self.subnet_result.insert(tk.END, f"Network Address: {network.network_address}\n")
-            self.subnet_result.insert(tk.END, f"Broadcast Address: {network.broadcast_address}\n")
-            self.subnet_result.insert(tk.END, f"Netmask: {network.netmask}\n")
-            self.subnet_result.insert(tk.END, f"Hostmask: {network.hostmask}\n")
-            self.subnet_result.insert(tk.END, f"Total Hosts: {network.num_addresses}\n")
-            self.subnet_result.insert(tk.END, f"Usable Hosts: {network.num_addresses - 2}\n")
-            self.subnet_result.insert(tk.END, f"First Usable: {list(network.hosts())[0]}\n")
-            self.subnet_result.insert(tk.END, f"Last Usable: {list(network.hosts())[-1]}\n")
-        except ValueError as e:
-            self.subnet_result.insert(tk.END, f"Error: {e}")
-    
-    def load_history(self):
-        # Clear existing items
-        for item in self.history_tree.get_children():
-            self.history_tree.delete(item)
-        
-        # Add sample history (in a real app, this would load from a file/database)
-        sample_history = [
-            ("2023-10-15 14:30", "192.168.1.1", "1-1024", "5", "12.5s"),
-            ("2023-10-14 09:15", "scanme.nmap.org", "1-1000", "3", "8.2s"),
-            ("2023-10-13 16:45", "127.0.0.1", "1-10000", "12", "45.3s")
-        ]
-        
-        for item in sample_history:
-            self.history_tree.insert("", "end", values=item)
-    
-    def clear_history(self):
-        for item in self.history_tree.get_children():
-            self.history_tree.delete(item)
-    
-    def export_history(self):
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".csv",
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
-        )
-        
-        if file_path:
-            try:
-                with open(file_path, 'w', newline='') as file:
-                    writer = csv.writer(file)
-                    writer.writerow(["Date", "Target", "Ports", "Open", "Time"])
-                    
-                    for item in self.history_tree.get_children():
-                        writer.writerow(self.history_tree.item(item)["values"])
-                
-                messagebox.showinfo("Export", "History exported successfully")
-            except Exception as e:
-                messagebox.showerror("Export Error", f"Failed to export: {e}")
+    def append_result(self, text, color="#ffffff"):
+        self.results_text.config(state=tk.NORMAL)
+        self.results_text.insert(tk.END, text, color)
+        self.results_text.tag_config(color, foreground=color)
+        self.results_text.see(tk.END)
+        self.results_text.config(state=tk.DISABLED)
     
     def toggle_scan(self):
         if self.scanning:
             self.stop_scan = True
-            self.scan_button.config(text="Stopping...", state="disabled")
+            self.scan_button.config(text="Stopping...")
             self.status_var.set("Stopping...")
         else:
             self.start_scan()
     
     def start_scan(self):
-        # Validate inputs
+        # التحقق من صحة المدخلات
+        target = self.target_var.get().strip()
+        if not target:
+            messagebox.showerror("Error", "Please enter a target to scan")
+            return
+        
         try:
-            target = self.target_var.get()
-            
-            # Determine port range based on selection
+            # الحصول على قائمة المنافذ للمسح
             if self.port_selection_var.get() == "Range":
                 start_port = int(self.start_port_var.get())
                 end_port = int(self.end_port_var.get())
+                if start_port > end_port:
+                    messagebox.showerror("Error", "Start port cannot be greater than end port")
+                    return
                 ports_to_scan = list(range(start_port, end_port + 1))
             elif self.port_selection_var.get() == "Common":
                 ports_to_scan = list(self.common_ports_list.keys())
             else:  # Custom
-                ports_str = self.custom_ports_var.get()
+                custom_ports = self.custom_ports_var.get().split(',')
                 ports_to_scan = []
-                for part in ports_str.split(','):
-                    if '-' in part:
-                        start, end = map(int, part.split('-'))
+                for port_str in custom_ports:
+                    port_str = port_str.strip()
+                    if '-' in port_str:
+                        start, end = map(int, port_str.split('-'))
                         ports_to_scan.extend(range(start, end + 1))
                     else:
-                        ports_to_scan.append(int(part))
+                        ports_to_scan.append(int(port_str))
             
+            # الحصول على إعدادات المسح
             timeout = float(self.timeout_var.get())
-            threads = int(self.threads_var.get())
-            delay = int(self.delay_var.get())
+            max_threads = int(self.threads_var.get())
+            delay = float(self.delay_var.get()) / 1000  # تحويل إلى ثواني
             retries = int(self.retries_var.get())
             
-            if any(p < 1 or p > 65535 for p in ports_to_scan):
-                messagebox.showerror("Error", "Invalid port range. Ports must be between 1 and 65535.")
-                return
-                
-            # Resolve target
-            try:
-                target_ip = socket.gethostbyname(target)
-            except socket.gaierror:
-                messagebox.showerror("Error", "Could not resolve hostname")
-                return
-                
-        except ValueError:
-            messagebox.showerror("Error", "Please enter valid numeric values")
+        except ValueError as e:
+            messagebox.showerror("Error", f"Invalid input: {str(e)}")
             return
         
-        # Start scanning
+        # إعداد حالة المسح
         self.scanning = True
         self.stop_scan = False
         self.open_ports = []
-        self.filtered_ports = 0
         self.scan_button.config(text="Stop Scan")
         self.status_var.set("Scanning...")
         self.progress.config(maximum=len(ports_to_scan), value=0)
         
-        # Clear previous results
+        # مسح النتائج السابقة
+        self.results_text.config(state=tk.NORMAL)
         self.results_text.delete(1.0, tk.END)
-        self.host_info_text.delete(1.0, tk.END)
-        self.vuln_text.delete(1.0, tk.END)
+        self.results_text.config(state=tk.DISABLED)
         
-        # Start scan in a separate thread
+        # بدء المسح في thread منفصل
         scan_thread = threading.Thread(
-            target=self.port_scanner,
-            args=(target_ip, ports_to_scan, timeout, threads, delay, retries)
+            target=self.scan_ports,
+            args=(target, ports_to_scan, timeout, max_threads, delay, retries)
         )
         scan_thread.daemon = True
         scan_thread.start()
     
-    def port_scanner(self, target, ports_to_scan, timeout, max_threads, delay, retries):
-        start_time = datetime.now()
-        total_ports = len(ports_to_scan)
-        scanned_count = 0
-        
-        # Display start message
-        self.append_result(f"🔍 Starting {self.scan_type_var.get()} scan on {target}\n", "#4fc3f7")
-        self.append_result(f"📊 Scanning {total_ports} ports\n", "#4fc3f7")
-        self.append_result(f"⚡ Timeout: {timeout}s | Threads: {max_threads} | Delay: {delay}ms\n", "#4fc3f7")
-        self.append_result("-" * 60 + "\n", "#5d5d5d")
-        
-        # Gather host information
-        self.gather_host_info(target)
-        
-        # Use ThreadPoolExecutor for better thread management
-        with ThreadPoolExecutor(max_workers=max_threads) as executor:
-            # Submit all port scanning tasks
-            future_to_port = {
-                executor.submit(self.scan_port, target, port, timeout, retries): port 
-                for port in ports_to_scan
+    def scan_ports(self, target, ports, timeout, max_threads, delay, retries):
+        try:
+            # حل اسم المضيف إذا كان اسم نطاق
+            try:
+                target_ip = socket.gethostbyname(target)
+            except socket.gaierror:
+                self.status_var.set("Invalid target")
+                self.scanning = False
+                self.scan_button.config(text="Start Scan")
+                return
+            
+            # تحديث معلومات المضيف
+            self.host_info = {
+                'target': target,
+                'ip': target_ip,
+                'start_time': datetime.now(),
+                'total_ports': len(ports)
             }
             
-            # Process results as they complete
-            for future in as_completed(future_to_port):
-                if self.stop_scan:
-                    executor.shutdown(wait=False, cancel_futures=True)
-                    break
-                
-                scanned_count += 1
-                self.scanned_ports_var.set(f"{scanned_count}/{total_ports}")
-                self.progress.config(value=scanned_count)
-                
-                # Apply delay if specified
-                if delay > 0:
-                    time.sleep(delay / 1000)
-        
-        # Calculate and display scan duration
-        end_time = datetime.now()
-        duration = end_time - start_time
-        
-        self.append_result("-" * 60 + "\n", "#5d5d5d")
-        if self.stop_scan:
-            self.append_result("⏹️ Scan stopped by user\n", "#ff9800")
-        else:
-            self.append_result(f"✅ Scan completed in {duration.total_seconds():.2f} seconds\n", "#4caf50")
-            self.append_result(f"🔓 Found {len(self.open_ports)} open ports\n", "#4caf50")
-            self.append_result(f"🚫 Found {self.filtered_ports} filtered ports\n", "#ff9800")
+            # مسح المنافذ باستخدام ThreadPool
+            from concurrent.futures import ThreadPoolExecutor, as_completed
             
-            if self.open_ports:
-                self.append_result("Open ports: " + ", ".join(map(str, sorted(self.open_ports))) + "\n", "#4caf50")
+            scanned_count = 0
+            filtered_count = 0
+            
+            with ThreadPoolExecutor(max_workers=max_threads) as executor:
+                # إنشاء مهمة لكل منفذ
+                future_to_port = {
+                    executor.submit(self.scan_port, target_ip, port, timeout, retries): port 
+                    for port in ports
+                }
                 
-                # Check for vulnerabilities
-                self.check_vulnerabilities(target)
-        
-        # Save to history
-        self.save_to_history(target, ports_to_scan, duration)
-        
-        # Reset UI state
-        self.scanning = False
-        self.root.after(0, self.update_ui_after_scan)
-    
-    def scan_port(self, target, port, timeout, retries):
-        for attempt in range(retries):
-            if self.stop_scan:
-                return
-                
-            try:
-                # Create socket object
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.settimeout(timeout)
-                    
-                    # Attempt to connect to the port
-                    result = s.connect_ex((target, port))
-                    
-                    if result == 0:
-                        # Port is open
-                        self.open_ports.append(port)
-                        self.open_ports_var.set(str(len(self.open_ports)))
+                for future in as_completed(future_to_port):
+                    if self.stop_scan:
+                        break
                         
-                        # Get service name if enabled
-                        service_name = "Unknown"
-                        if self.service_detection_var.get():
-                            try:
-                                service_name = socket.getservbyport(port, 'tcp')
-                            except:
-                                # Check our common ports list
-                                service_name = self.common_ports_list.get(port, "Unknown")
+                    port = future_to_port[future]
+                    try:
+                        result = future.result()
+                        scanned_count += 1
                         
-                        # Get banner if possible
-                        banner = self.get_banner(s, port)
-                        
-                        result_text = f"✅ Port {port:5} | OPEN    | {service_name}"
-                        if banner:
-                            result_text += f" | {banner}"
-                        result_text += "\n"
-                        
-                        self.append_result(result_text, "#4caf50")
-                        break  # Success, no need to retry
-                    else:
-                        # Port is closed or filtered
-                        if attempt == retries - 1:  # Last attempt
+                        if result['status'] == 'open':
+                            self.open_ports.append(port)
+                            self.display_port_result(port, result)
+                        elif result['status'] == 'filtered':
+                            filtered_count += 1
                             if self.verbose_var.get():
-                                result_text = f"❌ Port {port:5} | CLOSED  |\n"
-                                self.append_result(result_text, "#f44336")
-                        else:
-                            # Might be filtered (firewall dropping packets)
-                            self.filtered_ports += 1
-                            self.filtered_ports_var.set(str(self.filtered_ports))
-                            
-            except socket.timeout:
-                if attempt == retries - 1:  # Last attempt
-                    if self.verbose_var.get():
-                        result_text = f"⏱️  Port {port:5} | TIMEOUT |\n"
-                        self.append_result(result_text, "#ff9800")
-            except Exception as e:
-                if attempt == retries - 1:  # Last attempt
-                    if self.verbose_var.get():
-                        result_text = f"⚠️  Port {port:5} | ERROR   | {str(e)}\n"
-                        self.append_result(result_text, "#ff9800")
-    
-    def get_banner(self, sock, port):
-        try:
-            # Try to receive banner for common services
-            if port in [21, 22, 25, 80, 110, 143, 443]:
-                sock.settimeout(1.0)
-                banner = sock.recv(1024).decode('utf-8', errors='ignore').strip()
-                return banner[:100] + "..." if len(banner) > 100 else banner
-        except:
-            pass
-        return None
-    
-    def gather_host_info(self, target):
-        try:
-            self.host_info_text.insert(tk.END, f"Host Information for {target}\n")
-            self.host_info_text.insert(tk.END, "=" * 40 + "\n\n")
-            
-            # Get hostname if available
-            try:
-                hostname = socket.gethostbyaddr(target)[0]
-                self.host_info_text.insert(tk.END, f"Hostname: {hostname}\n")
-            except:
-                self.host_info_text.insert(tk.END, "Hostname: Not available\n")
-            
-            # Get geographic information (simplified)
-            if not target.startswith(('127.', '192.168.', '10.', '172.')):
-                try:
-                    response = requests.get(f"http://ip-api.com/json/{target}")
-                    data = response.json()
-                    if data['status'] == 'success':
-                        self.host_info_text.insert(tk.END, f"Country: {data.get('country', 'Unknown')}\n")
-                        self.host_info_text.insert(tk.END, f"Region: {data.get('regionName', 'Unknown')}\n")
-                        self.host_info_text.insert(tk.END, f"City: {data.get('city', 'Unknown')}\n")
-                        self.host_info_text.insert(tk.END, f"ISP: {data.get('isp', 'Unknown')}\n")
-                except:
-                    self.host_info_text.insert(tk.END, "Geolocation: Unable to determine\n")
-            
-            # OS detection (simplified)
-            if self.os_detection_var.get():
-                try:
-                    # Simple OS detection based on TTL
-                    ping = subprocess.Popen(
-                        ["ping", "-c", "1", "-W", "1", target],
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE
-                    )
-                    out, err = ping.communicate()
-                    
-                    if "ttl=" in out.decode().lower():
-                        ttl = int(out.decode().lower().split("ttl=")[1].split(" ")[0])
-                        if ttl <= 64:
-                            os_guess = "Linux/Unix"
-                        elif ttl <= 128:
-                            os_guess = "Windows"
-                        else:
-                            os_guess = "Other"
+                                self.display_port_result(port, result)
                         
-                        self.host_info_text.insert(tk.END, f"OS Guess: {os_guess} (TTL: {ttl})\n")
-                except:
-                    self.host_info_text.insert(tk.END, "OS Detection: Failed\n")
+                        # تحديث الإحصائيات
+                        self.scanned_ports_var.set(str(scanned_count))
+                        self.open_ports_var.set(str(len(self.open_ports)))
+                        self.filtered_ports_var.set(str(filtered_count))
+                        self.progress.config(value=scanned_count)
+                        
+                        # تأخير إذا تم تحديده
+                        if delay > 0:
+                            time.sleep(delay)
+                            
+                    except Exception as e:
+                        print(f"Error scanning port {port}: {e}")
             
-            self.host_info_text.insert(tk.END, "\nInformation gathering completed.\n")
+            # انتهاء المسح
+            self.finish_scan()
             
         except Exception as e:
-            self.host_info_text.insert(tk.END, f"Error gathering host information: {e}\n")
+            self.status_var.set(f"Error: {str(e)}")
+            self.scanning = False
+            self.scan_button.config(text="Start Scan")
     
-    def check_vulnerabilities(self, target):
-        self.vuln_text.insert(tk.END, f"Vulnerability Assessment for {target}\n")
-        self.vuln_text.insert(tk.END, "=" * 50 + "\n\n")
+    def scan_port(self, target, port, timeout, retries):
+        result = {
+            'port': port,
+            'status': 'closed',
+            'service': 'unknown',
+            'banner': ''
+        }
         
-        vulnerabilities_found = False
+        for attempt in range(retries):
+            if self.stop_scan:
+                break
+                
+            try:
+                # إنشاء socket
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(timeout)
+                
+                # محاولة الاتصال
+                connection_result = sock.connect_ex((target, port))
+                
+                if connection_result == 0:
+                    result['status'] = 'open'
+                    
+                    # محاولة الحصول على banner
+                    try:
+                        sock.send(b"HEAD / HTTP/1.1\r\n\r\n")
+                        banner = sock.recv(1024).decode('utf-8', errors='ignore')
+                        if banner:
+                            result['banner'] = banner.strip()[:100] + "..." if len(banner) > 100 else banner.strip()
+                    except:
+                        pass
+                    
+                    # تحديد الخدمة
+                    try:
+                        result['service'] = socket.getservbyport(port, 'tcp')
+                    except:
+                        result['service'] = 'unknown'
+                    
+                    break
+                else:
+                    # قد يكون المنفذ filtered
+                    result['status'] = 'filtered' if connection_result in [111, 113] else 'closed'
+                    
+            except socket.timeout:
+                result['status'] = 'filtered'
+            except Exception as e:
+                result['status'] = 'error'
+                result['error'] = str(e)
+            finally:
+                try:
+                    sock.close()
+                except:
+                    pass
+        
+        return result
+    
+    def display_port_result(self, port, result):
+        color = "#4caf50" if result['status'] == 'open' else "#ff9800" if result['status'] == 'filtered' else "#f44336"
+        status_text = result['status'].upper()
+        
+        self.append_result(f"Port {port:5d} : {status_text:8s}", color)
+        
+        if result['status'] == 'open':
+            service_info = f" - {result['service']}"
+            self.append_result(service_info, "#bb86fc")
+            
+            if result['banner']:
+                self.append_result(f" - {result['banner']}\n", "#03dac6")
+            else:
+                self.append_result("\n", color)
+        else:
+            self.append_result("\n", color)
+    
+    def finish_scan(self):
+        end_time = datetime.now()
+        scan_duration = end_time - self.host_info['start_time']
+        
+        # تحديث معلومات المضيف
+        self.update_host_info(scan_duration)
+        
+        # التحقق من الثغرات الأمنية
+        self.check_vulnerabilities()
+        
+        # حفظ في السجل
+        self.save_to_history(scan_duration)
+        
+        # تحديث الواجهة
+        self.status_var.set("Scan completed")
+        self.scanning = False
+        self.scan_button.config(text="Start Scan")
+        
+        # عرض ملخص
+        self.append_result(f"\nScan completed in {scan_duration.total_seconds():.2f} seconds\n", "#4fc3f7")
+        self.append_result(f"Scanned {self.host_info['total_ports']} ports, ", "#4fc3f7")
+        self.append_result(f"{len(self.open_ports)} open, ", "#4caf50")
+        self.append_result(f"{int(self.filtered_ports_var.get())} filtered\n", "#ff9800")
+    
+    def update_host_info(self, duration):
+        self.host_info_text.config(state=tk.NORMAL)
+        self.host_info_text.delete(1.0, tk.END)
+        
+        info = f"Target: {self.host_info['target']}\n"
+        info += f"IP Address: {self.host_info['ip']}\n"
+        info += f"Scan started: {self.host_info['start_time'].strftime('%Y-%m-%d %H:%M:%S')}\n"
+        info += f"Scan duration: {duration.total_seconds():.2f} seconds\n"
+        info += f"Total ports scanned: {self.host_info['total_ports']}\n"
+        info += f"Open ports: {len(self.open_ports)}\n"
+        info += f"Filtered ports: {self.filtered_ports_var.get()}\n\n"
+        
+        # معلومات إضافية إذا كان المضيف محلياً
+        if self.host_info['ip'] == self.local_ip or self.host_info['ip'].startswith('127.'):
+            info += "Note: Scanning localhost\n"
+        
+        self.host_info_text.insert(tk.END, info)
+        self.host_info_text.config(state=tk.DISABLED)
+    
+    def check_vulnerabilities(self):
+        self.vuln_text.config(state=tk.NORMAL)
+        self.vuln_text.delete(1.0, tk.END)
+        
+        if not self.open_ports:
+            self.vuln_text.insert(tk.END, "No open ports found for vulnerability analysis.\n")
+            self.vuln_text.config(state=tk.DISABLED)
+            return
+        
+        vulnerabilities_found = 0
+        
+        self.vuln_text.insert(tk.END, "Vulnerability Analysis:\n\n")
         
         for port in self.open_ports:
             port_str = str(port)
             if port_str in self.vulnerability_db:
                 vuln_info = self.vulnerability_db[port_str]
-                self.vuln_text.insert(tk.END, f"Port {port} ({vuln_info['service']}):\n", "#ff9800")
+                self.vuln_text.insert(tk.END, f"Port {port} ({vuln_info['service']}):\n", "#ff4444")
                 
                 for vuln in vuln_info['vulnerabilities']:
-                    self.vuln_text.insert(tk.END, f"  - {vuln}\n", "#ff4444")
-                    vulnerabilities_found = True
+                    self.vuln_text.insert(tk.END, f"  - {vuln}\n", "#ffbb33")
+                    vulnerabilities_found += 1
                 
                 self.vuln_text.insert(tk.END, "\n")
         
-        if not vulnerabilities_found:
-            self.vuln_text.insert(tk.END, "No known vulnerabilities detected for open ports.\n", "#00C851")
+        if vulnerabilities_found == 0:
+            self.vuln_text.insert(tk.END, "No known vulnerabilities detected in open ports.\n", "#00C851")
         else:
-            self.vuln_text.insert(tk.END, "\nVulnerability assessment completed.\n", "#ff9800")
+            self.vuln_text.insert(tk.END, f"Total potential vulnerabilities found: {vulnerabilities_found}\n", "#ff4444")
+        
+        self.vuln_text.config(state=tk.DISABLED)
     
-    def save_to_history(self, target, ports, duration):
-        scan_info = {
-            'date': datetime.now().strftime("%Y-%m-%d %H:%M"),
-            'target': target,
-            'ports': f"{min(ports)}-{max(ports)}" if len(ports) > 1 else str(ports[0]),
-            'open': len(self.open_ports),
-            'time': f"{duration.total_seconds():.1f}s"
+    def save_to_history(self, duration):
+        scan_entry = {
+            'date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'target': self.host_info['target'],
+            'ip': self.host_info['ip'],
+            'ports_scanned': self.host_info['total_ports'],
+            'open_ports': len(self.open_ports),
+            'filtered_ports': int(self.filtered_ports_var.get()),
+            'duration': f"{duration.total_seconds():.2f}s",
+            'open_ports_list': self.open_ports.copy()
         }
         
-        self.scan_history.append(scan_info)
+        self.scan_history.append(scan_entry)
         
-        # Add to history treeview
-        self.history_tree.insert("", "end", values=(
-            scan_info['date'],
-            scan_info['target'],
-            scan_info['ports'],
-            scan_info['open'],
-            scan_info['time']
-        ))
-    
-    def append_result(self, text, color="#ffffff"):
-        self.root.after(0, self._append_result, text, color)
-    
-    def _append_result(self, text, color):
-        self.results_text.configure(fg=color)
-        self.results_text.insert(tk.END, text)
-        self.results_text.see(tk.END)
-    
-    def update_ui_after_scan(self):
-        self.scan_button.config(text="Start Scan", state="normal")
-        self.status_var.set("Ready" if not self.stop_scan else "Stopped")
+        # حفظ إلى ملف
+        try:
+            history_file = "scan_history.json"
+            with open(history_file, 'w') as f:
+                json.dump(self.scan_history, f, indent=2)
+        except Exception as e:
+            print(f"Error saving history: {e}")
     
     def clear_results(self):
+        self.results_text.config(state=tk.NORMAL)
         self.results_text.delete(1.0, tk.END)
+        self.results_text.config(state=tk.DISABLED)
+        
+        self.host_info_text.config(state=tk.NORMAL)
         self.host_info_text.delete(1.0, tk.END)
+        self.host_info_text.config(state=tk.DISABLED)
+        
+        self.vuln_text.config(state=tk.NORMAL)
         self.vuln_text.delete(1.0, tk.END)
+        self.vuln_text.config(state=tk.DISABLED)
+        
         self.open_ports_var.set("0")
         self.scanned_ports_var.set("0")
         self.filtered_ports_var.set("0")
-        self.open_ports = []
+        self.status_var.set("Ready")
         self.progress.config(value=0)
-        self.append_result("🗑️ Results cleared\n\n", "#ba68c8")
+        
+        self.append_result("Results cleared. Ready for new scan.\n", "#4fc3f7")
     
     def save_results(self):
+        if not self.open_ports and not self.scan_history:
+            messagebox.showinfo("Save Results", "No scan results to save.")
+            return
+        
         file_path = filedialog.asksaveasfilename(
             defaultextension=".txt",
-            filetypes=[("Text files", "*.txt"), ("CSV files", "*.csv"), ("All files", "*.*")]
+            filetypes=[("Text files", "*.txt"), ("CSV files", "*.csv"), ("JSON files", "*.json"), ("All files", "*.*")]
         )
         
-        if file_path:
-            try:
-                with open(file_path, 'w') as file:
-                    # Write port results
-                    file.write("PORT SCAN RESULTS\n")
-                    file.write("=================\n\n")
-                    file.write(self.results_text.get(1.0, tk.END))
-                    file.write("\n\n")
-                    
-                    # Write host information
-                    file.write("HOST INFORMATION\n")
-                    file.write("================\n\n")
-                    file.write(self.host_info_text.get(1.0, tk.END))
-                    file.write("\n\n")
-                    
-                    # Write vulnerability assessment
-                    file.write("VULNERABILITY ASSESSMENT\n")
-                    file.write("=======================\n\n")
-                    file.write(self.vuln_text.get(1.0, tk.END))
+        if not file_path:
+            return
+        
+        try:
+            if file_path.endswith('.csv'):
+                self.save_results_csv(file_path)
+            elif file_path.endswith('.json'):
+                self.save_results_json(file_path)
+            else:
+                self.save_results_txt(file_path)
                 
-                messagebox.showinfo("Save Results", "Results saved successfully")
-            except Exception as e:
-                messagebox.showerror("Save Error", f"Failed to save results: {e}")
+            messagebox.showinfo("Save Results", f"Results saved successfully to {file_path}")
+        except Exception as e:
+            messagebox.showerror("Save Error", f"Error saving results: {str(e)}")
+    
+    def save_results_txt(self, file_path):
+        with open(file_path, 'w') as f:
+            f.write(f"Port Scanner Pro - Scan Results\n")
+            f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Target: {self.host_info.get('target', 'N/A')}\n")
+            f.write(f"IP: {self.host_info.get('ip', 'N/A')}\n")
+            f.write(f"Scan duration: {self.host_info.get('duration', 'N/A')}\n\n")
+            
+            f.write("OPEN PORTS:\n")
+            f.write("----------\n")
+            for port in self.open_ports:
+                f.write(f"Port {port}\n")
+            
+            f.write(f"\nTotal open ports: {len(self.open_ports)}\n")
+            f.write(f"Total ports scanned: {self.host_info.get('total_ports', 0)}\n")
+    
+    def save_results_csv(self, file_path):
+        with open(file_path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['Port', 'Status', 'Service'])
+            for port in self.open_ports:
+                writer.writerow([port, 'Open', 'Unknown'])  # يمكن تحسين هذا
+    
+    def save_results_json(self, file_path):
+        results = {
+            'scan_date': datetime.now().isoformat(),
+            'target': self.host_info.get('target', ''),
+            'ip_address': self.host_info.get('ip', ''),
+            'open_ports': self.open_ports,
+            'scan_duration': self.host_info.get('duration', ''),
+            'total_ports_scanned': self.host_info.get('total_ports', 0)
+        }
+        
+        with open(file_path, 'w') as f:
+            json.dump(results, f, indent=2)
+    
+    def discover_hosts(self):
+        target = self.target_var.get().strip()
+        if not target:
+            messagebox.showerror("Error", "Please enter a target network")
+            return
+        
+        try:
+            # تحقق إذا كان المدخل هو نطاق شبكة
+            network = ipaddress.ip_network(target, strict=False)
+            network_str = str(network)
+        except ValueError:
+            messagebox.showerror("Error", "Please enter a valid network (e.g., 192.168.1.0/24)")
+            return
+        
+        if not SCAPY_AVAILABLE:
+            messagebox.showerror("Error", "Scapy library required for host discovery")
+            return
+        
+        # تنفيذ مسح ARP لاكتشاف الأجهزة
+        self.append_result(f"\nDiscovering hosts in {network_str}...\n", "#4fc3f7")
+        
+        try:
+            # إنشاء طلب ARP
+            arp = ARP(pdst=str(network))
+            ether = Ether(dst="ff:ff:ff:ff:ff:ff")
+            packet = ether/arp
+            
+            # إرسال واستقبال الحزم
+            result = srp(packet, timeout=2, verbose=0)[0]
+            
+            hosts = []
+            for sent, received in result:
+                hosts.append({'ip': received.psrc, 'mac': received.hwsrc})
+            
+            if hosts:
+                self.append_result(f"Found {len(hosts)} hosts:\n", "#4caf50")
+                for host in hosts:
+                    self.append_result(f"IP: {host['ip']} - MAC: {host['mac']}\n", "#bb86fc")
+            else:
+                self.append_result("No hosts found in the network\n", "#ff9800")
+                
+        except Exception as e:
+            self.append_result(f"Discovery error: {str(e)}\n", "#f44336")
+    
+    def run_ping(self):
+        host = self.ping_host_var.get().strip()
+        if not host:
+            messagebox.showerror("Error", "Please enter a host to ping")
+            return
+        
+        self.ping_result.config(state=tk.NORMAL)
+        self.ping_result.delete(1.0, tk.END)
+        self.ping_result.insert(tk.END, f"Pinging {host}...\n\n")
+        self.ping_result.config(state=tk.DISABLED)
+        
+        # تنفيذ ping بناءً على نظام التشغيل
+        param = "-n" if IS_WINDOWS else "-c"
+        command = ["ping", param, "4", host]
+        
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+            self.ping_result.config(state=tk.NORMAL)
+            self.ping_result.insert(tk.END, result.stdout)
+            if result.stderr:
+                self.ping_result.insert(tk.END, f"\nError: {result.stderr}")
+            self.ping_result.config(state=tk.DISABLED)
+        except subprocess.TimeoutExpired:
+            self.ping_result.config(state=tk.NORMAL)
+            self.ping_result.insert(tk.END, "Ping timed out")
+            self.ping_result.config(state=tk.DISABLED)
+        except Exception as e:
+            self.ping_result.config(state=tk.NORMAL)
+            self.ping_result.insert(tk.END, f"Error: {str(e)}")
+            self.ping_result.config(state=tk.DISABLED)
+    
+    def run_traceroute(self):
+        host = self.ping_host_var.get().strip()
+        if not host:
+            messagebox.showerror("Error", "Please enter a host for traceroute")
+            return
+        
+        self.ping_result.config(state=tk.NORMAL)
+        self.ping_result.delete(1.0, tk.END)
+        self.ping_result.insert(tk.END, f"Traceroute to {host}...\n\n")
+        self.ping_result.config(state=tk.DISABLED)
+        
+        # تنفيذ traceroute بناءً على نظام التشغيل
+        command = ["tracert", "-d", host] if IS_WINDOWS else ["traceroute", host]
+        
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=30)
+            self.ping_result.config(state=tk.NORMAL)
+            self.ping_result.insert(tk.END, result.stdout)
+            if result.stderr:
+                self.ping_result.insert(tk.END, f"\nError: {result.stderr}")
+            self.ping_result.config(state=tk.DISABLED)
+        except FileNotFoundError:
+            self.ping_result.config(state=tk.NORMAL)
+            self.ping_result.insert(tk.END, "Traceroute command not available")
+            self.ping_result.config(state=tk.DISABLED)
+        except Exception as e:
+            self.ping_result.config(state=tk.NORMAL)
+            self.ping_result.insert(tk.END, f"Error: {str(e)}")
+            self.ping_result.config(state=tk.DISABLED)
+    
+    def run_whois(self):
+        if not WHOIS_AVAILABLE:
+            messagebox.showerror("Error", "Whois library not available")
+            return
+        
+        domain = self.whois_domain_var.get().strip()
+        if not domain:
+            messagebox.showerror("Error", "Please enter a domain")
+            return
+        
+        self.whois_result.config(state=tk.NORMAL)
+        self.whois_result.delete(1.0, tk.END)
+        self.whois_result.insert(tk.END, f"WHOIS lookup for {domain}...\n\n")
+        self.whois_result.config(state=tk.DISABLED)
+        
+        try:
+            whois_info = whois.whois(domain)
+            self.whois_result.config(state=tk.NORMAL)
+            self.whois_result.insert(tk.END, str(whois_info))
+            self.whois_result.config(state=tk.DISABLED)
+        except Exception as e:
+            self.whois_result.config(state=tk.NORMAL)
+            self.whois_result.insert(tk.END, f"Error: {str(e)}")
+            self.whois_result.config(state=tk.DISABLED)
+    
+    def run_dns_lookup(self):
+        if not DNS_AVAILABLE:
+            messagebox.showerror("Error", "DNS library not available")
+            return
+        
+        domain = self.dns_domain_var.get().strip()
+        record_type = self.dns_type_var.get().strip()
+        if not domain:
+            messagebox.showerror("Error", "Please enter a domain")
+            return
+        
+        self.dns_result.config(state=tk.NORMAL)
+        self.dns_result.delete(1.0, tk.END)
+        self.dns_result.insert(tk.END, f"DNS {record_type} lookup for {domain}...\n\n")
+        self.dns_result.config(state=tk.DISABLED)
+        
+        try:
+            answers = dns.resolver.resolve(domain, record_type)
+            self.dns_result.config(state=tk.NORMAL)
+            for answer in answers:
+                self.dns_result.insert(tk.END, f"{answer}\n")
+            self.dns_result.config(state=tk.DISABLED)
+        except dns.resolver.NoAnswer:
+            self.dns_result.config(state=tk.NORMAL)
+            self.dns_result.insert(tk.END, f"No {record_type} records found for {domain}")
+            self.dns_result.config(state=tk.DISABLED)
+        except Exception as e:
+            self.dns_result.config(state=tk.NORMAL)
+            self.dns_result.insert(tk.END, f"Error: {str(e)}")
+            self.dns_result.config(state=tk.DISABLED)
+    
+    def calculate_subnet(self):
+        subnet_input = self.subnet_ip_var.get().strip()
+        if not subnet_input:
+            messagebox.showerror("Error", "Please enter an IP/CIDR")
+            return
+        
+        try:
+            network = ipaddress.ip_network(subnet_input, strict=False)
+            self.subnet_result.config(state=tk.NORMAL)
+            self.subnet_result.delete(1.0, tk.END)
+            
+            info = f"Subnet Calculator Results:\n\n"
+            info += f"Network Address: {network.network_address}\n"
+            info += f"Broadcast Address: {network.broadcast_address}\n"
+            info += f"Netmask: {network.netmask}\n"
+            info += f"Wildcard Mask: {network.hostmask}\n"
+            info += f"CIDR Notation: /{network.prefixlen}\n"
+            info += f"Total Hosts: {network.num_addresses}\n"
+            info += f"Usable Hosts: {network.num_addresses - 2}\n"
+            info += f"First Usable: {list(network.hosts())[0] if network.num_addresses > 2 else 'N/A'}\n"
+            info += f"Last Usable: {list(network.hosts())[-1] if network.num_addresses > 2 else 'N/A'}\n"
+            
+            self.subnet_result.insert(tk.END, info)
+            self.subnet_result.config(state=tk.DISABLED)
+            
+        except ValueError as e:
+            self.subnet_result.config(state=tk.NORMAL)
+            self.subnet_result.delete(1.0, tk.END)
+            self.subnet_result.insert(tk.END, f"Error: Invalid IP/CIDR format\n{e}")
+            self.subnet_result.config(state=tk.DISABLED)
+    
+    def load_history(self):
+        try:
+            history_file = "scan_history.json"
+            if os.path.exists(history_file):
+                with open(history_file, 'r') as f:
+                    self.scan_history = json.load(f)
+                
+                # تحديث Treeview
+                for item in self.history_tree.get_children():
+                    self.history_tree.delete(item)
+                
+                for scan in self.scan_history:
+                    self.history_tree.insert("", "end", values=(
+                        scan['date'],
+                        scan['target'],
+                        scan['ports_scanned'],
+                        scan['open_ports'],
+                        scan['duration']
+                    ))
+        except Exception as e:
+            print(f"Error loading history: {e}")
+    
+    def clear_history(self):
+        if messagebox.askyesno("Clear History", "Are you sure you want to clear all scan history?"):
+            self.scan_history = []
+            for item in self.history_tree.get_children():
+                self.history_tree.delete(item)
+            
+            try:
+                os.remove("scan_history.json")
+            except:
+                pass
+    
+    def export_history(self):
+        if not self.scan_history:
+            messagebox.showinfo("Export", "No scan history to export")
+            return
+        
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".json",
+            filetypes=[("JSON files", "*.json"), ("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            if file_path.endswith('.csv'):
+                with open(file_path, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['Date', 'Target', 'IP', 'Ports Scanned', 'Open Ports', 'Duration'])
+                    for scan in self.scan_history:
+                        writer.writerow([
+                            scan['date'],
+                            scan['target'],
+                            scan['ip'],
+                            scan['ports_scanned'],
+                            scan['open_ports'],
+                            scan['duration']
+                        ])
+            else:
+                with open(file_path, 'w') as f:
+                    json.dump(self.scan_history, f, indent=2)
+            
+            messagebox.showinfo("Export", "History exported successfully")
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Error exporting history: {str(e)}")
 
 def main():
     root = tk.Tk()
