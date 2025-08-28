@@ -1,53 +1,16 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-import os
-import sys
 import subprocess
-import time
+import sys
 
-def run_command(command):
-    """تنفيذ أمر في CMD"""
+def install_svttk():
     try:
-        result = subprocess.run(command, shell=True, check=True, 
-                              capture_output=True, text=True)
-        return result.stdout
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install", "sv-ttk", "--break-system-packages"
+        ])
+        print("\n✅ مكتبة sv-ttk تم تثبيتها بنجاح.")
     except subprocess.CalledProcessError as e:
-        print(f"خطأ: {e}")
-        return None
-
-def main():
-    print("=" * 50)
-    print("PortScan Installer")
-    print("=" * 50)
-    
-    # تثبيت المتطلبات
-    print("📦 جاري تثبيت الحزم المطلوبة...")
-    
-    packages = ["sv-ttk", "tkinter"]
-    
-    for package in packages:
-        print(f"🔧 تثبيت {package}...")
-        result = run_command(f"pip install {package}")
-        if result:
-            print(f"✅ تم تثبيت {package} بنجاح")
-        else:
-            print(f"❌ فشل تثبيت {package}")
-        print("-" * 30)
-    
-    # تشغيل الأداة
-    print("🚀 تشغيل PortScan...")
-    time.sleep(2)
-    
-    try:
-        # تشغيل البرنامج الرئيسي
-        import portscan
-        print("✅ تم تشغيل الأداة بنجاح!")
-    except ImportError as e:
-        print(f"❌ خطأ في التشغيل: {e}")
-        print("تأكد من وجود ملف portscan.py في نفس المجلد")
-    
-    input("\nPress Enter to exit...")
+        print("\n❌ فشل التثبيت. تأكد أنك تملك صلاحيات كافية أو أنك على Kali Linux.")
+        print(f"الخطأ: {e}")
 
 if __name__ == "__main__":
-    main()
+    install_svttk()
+
